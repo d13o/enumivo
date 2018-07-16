@@ -7,6 +7,7 @@
 #include <enumivo/chain_plugin/chain_plugin.hpp>
 #include <enumivo/http_plugin/http_plugin.hpp>
 #include <enumivo/history_plugin/history_plugin.hpp>
+#include <enumivo/ram_plugin.hpp>
 #include <enumivo/net_plugin/net_plugin.hpp>
 #include <enumivo/producer_plugin/producer_plugin.hpp>
 #include <enumivo/utilities/common.hpp>
@@ -95,6 +96,7 @@ int main(int argc, char** argv)
    try {
       app().set_version(enumivo::enunode::config::version);
       app().register_plugin<history_plugin>();
+      app().register_plugin<ram_plugin>();
 
       auto root = fc::app_path();
       app().set_default_data_dir(root / "enumivo/enunode/data" );
