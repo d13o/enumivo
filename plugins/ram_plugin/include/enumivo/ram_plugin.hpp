@@ -56,7 +56,22 @@ class read_only {
           optional<bool>                time_limit_exceeded_error;
       };
 
+      struct evaluate_params {
+          asset from;
+      };
+
+      struct evaluate_result {
+          asset to;
+          asset fee;
+
+          asset rammarket_base;
+          asset rammarket_quote;
+
+          uint32_t  last_irreversible_block;
+      };
+
       get_actions_result get_actions( const get_actions_params& )const;
+      evaluate_result evaluate( const evaluate_params& )const;
 
 };
 } // namespace ram_apis
