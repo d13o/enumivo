@@ -38,7 +38,9 @@ void ram_api_plugin::plugin_startup() {
    auto ro_api = app().get_plugin<ram_plugin>().get_read_only_api();
 
    app().get_plugin<http_plugin>().add_api({
-      CHAIN_RO_CALL(get_actions)
+      CHAIN_RO_CALL(get_actions),
+      CHAIN_RO_CALL(evaluate)
+
    });
 }
 

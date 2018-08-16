@@ -280,15 +280,77 @@ namespace enumivo {
 
 
     namespace ram_apis { 
+
+       asset exchange_state::convert_to_exchange( connector&c, asset in ) {
+           real_type R(supply.get_amount());
+           real_type C(c.balance.get_amount()+in.get_amount());
+           real_type F(c.weight/1000.0);
+           real_type T(in.get_amount());
+           real_type ONE(1.0);
+
+           real_type E = -R * (ONE - std::pow( ONE + T / C, F) );
+           int64_t issued = int64_t(E);
+
+           supply += asset( issued, supply.get_symbol() );
+           c.balance += in;
+
+           return asset( issued, supply.get_symbol() );
+       }
+
+       asset exchange_state::convert_from_exchange( connector&c, asset in ) {
+           real_type R((supply - in).get_amount());
+           real_type C(c.balance.get_amount());
+           real_type F(1000.0/c.weight);
+           real_type E(in.get_amount());
+           real_type ONE(1.0);
+
+           real_type T = C * (std::pow( ONE + E/R, F) - ONE);
+           int64_t out = int64_t(T);
+
+           supply -= in;
+           c.balance -= asset( out, c.balance.get_symbol() );
+
+           return asset( out, c.balance.get_symbol() );
+       }
+
+       asset exchange_state::convert( asset from, symbol to ) {
+           auto sell_symbol  = from.get_symbol();
+           auto ex_symbol    = supply.get_symbol();
+           auto base_symbol  = base.balance.get_symbol();
+           auto quote_symbol = quote.balance.get_symbol();
+
+           if( sell_symbol != ex_symbol ) {
+              if( sell_symbol == base_symbol ) {
+                 from = convert_to_exchange( base, from );
+              } else if( sell_symbol == quote_symbol ) {
+                 from = convert_to_exchange( quote, from );
+              } else {
+                 FC_ASSERT(false, "invalid sell");
+              }
+           } else {
+              if( to == base_symbol ) {
+                 from = convert_from_exchange( base, from );
+              } else if( to == quote_symbol ) {
+                 from = convert_from_exchange( quote, from );
+              } else {
+                 FC_ASSERT(false, "invalid conversion");
+              }
+           }
+
+           if( to != from.get_symbol() )
+              return convert( from, to );
+
+           return from;
+       }
+
        read_only::get_actions_result read_only::get_actions( const read_only::get_actions_params& params )const {
-         edump((params));
          auto& chain = ram->chain_plug->chain();
          const auto& db = chain.db();
          const auto& idx = db.get_index<ram_action_index, by_id>();
 
          int32_t pos = params.pos ? *params.pos : -1;
          int32_t offset = params.offset ? *params.offset : -20;
-         int32_t start, end; 
+         int32_t start, end;
          int32_t size = idx.size();
 
          if ( pos <= -1 ) {
@@ -330,9 +392,65 @@ namespace enumivo {
          
          return result;
        }
+
+       exchange_state read_only::get_exchange_state()const {
+           auto& chain = ram->chain_plug->chain();
+           const auto& db = chain.db();
+
+	       const auto& acnt = chain.get_account(N(enumivo));
+           const auto& abi = acnt.get_abi();
+           abi_serializer abis;
+           abis.set_abi(abi, ram->abi_serializer_max_time);
+
+           const auto* const table_id = db.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple(N(enumivo), N(enumivo), N(rammarket)));
+           ENU_ASSERT(table_id, chain::contract_table_query_exception, "Missing table rammarket");
+
+           const auto& kv_index = db.get_index<key_value_index, by_scope_primary>();
+           const auto it = kv_index.find(boost::make_tuple(table_id->id));
+           ENU_ASSERT(it != kv_index.end(), chain::contract_table_query_exception, "Missing row in table rammarket");
+           vector<char> data;
+           enumivo::chain_apis::read_only::copy_inline_row(*it, data);
+
+           const auto& v = abis.binary_to_variant(abis.get_table_type(N(rammarket)), data, ram->abi_serializer_max_time);
+           asset supply, base_balance, quote_balance;
+           fc::from_variant(v["supply"], supply);
+           fc::from_variant(v["base"]["balance"], base_balance);
+           fc::from_variant(v["quote"]["balance"], quote_balance);
+           exchange_state es = {
+               .supply = supply,
+               .base.balance = base_balance,
+               .quote.balance = quote_balance
+           };
+           return es;
+       }
+
+       read_only::evaluate_result read_only::evaluate( const read_only::evaluate_params& params )const {
+           FC_ASSERT( params.from.get_symbol() == symbol(SY(4,ENU)) || params.from.get_symbol() == symbol(SY(0,RAM)), "illegal symbol");
+           auto to_symbol = params.from.get_symbol() == symbol(SY(4,ENU)) ? symbol(SY(0,RAM)) : symbol(SY(4,ENU));
+
+           auto& chain = ram->chain_plug->chain();
+           auto es = get_exchange_state();
+
+           asset to, fee;
+           if ( params.from.get_symbol() == symbol(SY(4,ENU)) ) { // from ENU to RAM
+               fee = asset( ( params.from.get_amount() + 199 ) / 200, params.from.get_symbol());
+               auto quant_after_fee = params.from - fee;
+               to = es.convert( quant_after_fee, to_symbol );
+           } else { // from RAM to ENU
+               auto tokens_out = es.convert( params.from, to_symbol );
+               fee = asset( ( tokens_out.get_amount() + 199 ) / 200, tokens_out.get_symbol() );
+               to = tokens_out - fee;
+           }
+
+           evaluate_result result = {
+               .to = to,
+               .fee = fee,
+               .last_irreversible_block = chain.last_irreversible_block_num()
+           };
+           return result;
+       }
     } /// ram_apis
 
 }
 
 FC_REFLECT( enumivo::ram_action_object, (payer)(receiver)(name)(token)(fee)(exp_ram)(act_ram)(block_num)(block_time)(trx_id) )
-

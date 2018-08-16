@@ -13,12 +13,32 @@ namespace enumivo {
     using std::shared_ptr;
     using chain::transaction_id_type;
     using chain::action_name;
+    using chain::symbol;
     using fc::optional;
 
     typedef shared_ptr<class ram_plugin_impl> ram_ptr;
     typedef shared_ptr<const class ram_plugin_impl> ram_const_ptr;
 
 namespace ram_apis {
+
+    typedef double real_type;
+    using namespace enumivo::chain_apis;
+
+struct exchange_state {
+    asset    supply;
+
+    struct connector {
+        asset balance;
+        double weight = .5;
+    };
+
+    connector base;
+    connector quote;
+
+    asset convert_to_exchange( connector& c, asset in );
+    asset convert_from_exchange( connector& c, asset in );
+    asset convert( asset from, symbol to );
+};
 
 class read_only {
    ram_const_ptr ram;
@@ -63,15 +83,12 @@ class read_only {
       struct evaluate_result {
           asset to;
           asset fee;
-
-          asset rammarket_base;
-          asset rammarket_quote;
-
           uint32_t  last_irreversible_block;
       };
 
       get_actions_result get_actions( const get_actions_params& )const;
       evaluate_result evaluate( const evaluate_params& )const;
+      exchange_state get_exchange_state()const;
 
 };
 } // namespace ram_apis
@@ -101,3 +118,7 @@ private:
 FC_REFLECT( enumivo::ram_apis::read_only::get_actions_params, (pos)(offset) )
 FC_REFLECT( enumivo::ram_apis::read_only::get_actions_result, (actions)(last_irreversible_block)(time_limit_exceeded_error) )
 FC_REFLECT( enumivo::ram_apis::read_only::ram_action_result, (action_seq)(payer)(receiver)(name)(token)(fee)(exp_ram)(act_ram)(block_num)(block_time)(trx_id) )
+FC_REFLECT( enumivo::ram_apis::read_only::evaluate_params, (from) )
+FC_REFLECT( enumivo::ram_apis::read_only::evaluate_result, (to)(fee)(last_irreversible_block) )
+FC_REFLECT( enumivo::ram_apis::exchange_state, (supply)(base)(quote) )
+FC_REFLECT( enumivo::ram_apis::exchange_state::connector, (balance)(weight) );
